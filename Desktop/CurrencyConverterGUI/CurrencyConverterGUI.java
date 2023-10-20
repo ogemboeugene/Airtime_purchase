@@ -1,67 +1,33 @@
 import javafx.application.Application;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
+import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.FileReader;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * CurrencyConverterGUI - Currency Conversion Graphical User Interface
- *
- * This JavaFX application provides a user-friendly graphical interface for converting
- * currency based on exchange rate data stored in a JSON file. It allows users to select
- * source and target currencies, enter an amount, and calculate the converted amount.
- *
- * Features:
- * - Load exchange rate data from a JSON file.
- * - Select source and target currencies from dropdown lists.
- * - Enter the amount to be converted.
- * - Calculate and display the converted amount.
- *
- * Usage:
- * - Launch the application, providing a JSON file containing exchange rate data.
- * - The application will display a window with currency conversion options.
- * - Select source and target currencies, enter an amount, and click the "Convert" button.
- * - The application will calculate and display the converted amount.
- *
- * Class Structure:
- * - `CurrencyConverterGUI` extends the JavaFX `Application` class and provides the
- *   graphical user interface for the currency converter.
- *
- * Methods:
- * - `start(Stage primaryStage)`: The main entry point for the JavaFX application.
- *   It sets up the GUI components, including dropdown lists, input fields, and buttons.
- *   The user can select currencies, enter an amount, and initiate currency conversion.
- *
- * - `showAlert(String title, String message)`: Helper method to display alert dialogs
- *   for error messages and information.
- *
- * Dependencies:
- * - JavaFX for the graphical user interface.
- * - Google Gson library for JSON parsing and data handling.
- *
- * Note:
- * Before using this application, you need to provide the path to the JSON file containing
- * exchange rate data in the `FileReader` constructor. Ensure that the JSON file has a
- * "rates" field that contains currency conversion rates.
- */
-
- 
 public class CurrencyConverterGUI extends Application {
     private JsonObject ratesObject;
+    private CustomComboBox sourceCurrencyComboBox;
+    private CustomComboBox targetCurrencyComboBox;
+    private DatePicker datePicker;
+    private TextField amountTextField;
+    private Label resultLabel;
+    private String selectedDate; // Declare selectedDate at a higher scope
+    // Add a boolean flag to track editability
+    private boolean isEditable = true;
 
     public static void main(String[] args) {
-        // Run the Python script to fetch currency rates
-        runPythonScript();
-
-        // Launch the JavaFX application
         launch(args);
     }
 
@@ -69,37 +35,44 @@ public class CurrencyConverterGUI extends Application {
     public void start(Stage primaryStage) {
         primaryStage.setTitle("Currency Converter");
 
-        try (FileReader reader = new FileReader("currency_rates.json")) {
-            JsonElement jsonElement = JsonParser.parseReader(reader);
-            JsonObject jsonObject = jsonElement.getAsJsonObject();
+        // Load the initial JSON data
+        loadInitialRatesData();
 
-            if (jsonObject.has("rates")) {
-                ratesObject = jsonObject.getAsJsonObject("rates");
-            } else {
-                showAlert("Invalid JSON format", "'rates' field not found in JSON.");
-                return;
-            }
-        } catch (IOException e) {
-            showAlert("Error", "Failed to read currency rates file: " + e.getMessage());
-            return;
-        } catch (Exception e) {
-            showAlert("Error", "An unexpected error occurred: " + e.getMessage());
-            return;
-        }
 
-        // GUI components
         BorderPane borderPane = new BorderPane();
-        ComboBox<String> sourceCurrencyComboBox = new ComboBox<>();
-        ComboBox<String> targetCurrencyComboBox = new ComboBox<>();
-        TextField amountTextField = new TextField();
-        Label resultLabel = new Label();
+        sourceCurrencyComboBox = new CustomComboBox();
+        targetCurrencyComboBox = new CustomComboBox();
+        amountTextField = new TextField();
+        resultLabel = new Label();
 
-        // Fill sourceCurrencyComboBox and targetCurrencyComboBox from ratesObject
+        datePicker = new DatePicker();
+        datePicker.setValue(LocalDate.now());
+
+        // Move the selectedDate declaration here
+        selectedDate = LocalDate.now().toString();
+
+        datePicker.valueProperty().addListener((observable, oldValue, newValue) -> {
+            selectedDate = newValue.toString();
+
+            // When the date changes, update rates and the JSON file
+            updateRatesFromJSON(selectedDate);
+            // Update the result label here if you want
+            resultLabel.setText(""); // Clear the result label
+            // updateResultLabel(selectedDate);
+        });
+
         Set<Map.Entry<String, JsonElement>> entries = ratesObject.entrySet();
         for (Map.Entry<String, JsonElement> entry : entries) {
             sourceCurrencyComboBox.getItems().add(entry.getKey());
             targetCurrencyComboBox.getItems().add(entry.getKey());
         }
+
+        Button toggleEditButton = new Button("Toggle Edit");
+        toggleEditButton.setOnAction(e -> {
+            isEditable = !isEditable; // Toggle the editability flag
+            sourceCurrencyComboBox.setEditable(isEditable);
+            targetCurrencyComboBox.setEditable(isEditable);
+        });
 
         Button convertButton = new Button("Convert");
         convertButton.setOnAction(e -> {
@@ -114,7 +87,15 @@ public class CurrencyConverterGUI extends Application {
                 return;
             }
 
+            // Temporarily set the combo boxes to non-editable during the conversion
+            sourceCurrencyComboBox.setEditable(false);
+            targetCurrencyComboBox.setEditable(false);
+
+            // Run the Python script and update the currency rates
+            runPythonScript(selectedDate);
+
             if (ratesObject.has(sourceCurrency) && ratesObject.has(targetCurrency)) {
+                 // Perform the currency conversion and update the result label
                 double sourceToUSD = ratesObject.get(sourceCurrency).getAsDouble();
                 double targetToUSD = ratesObject.get(targetCurrency).getAsDouble();
                 double conversionRate = targetToUSD / sourceToUSD;
@@ -124,38 +105,79 @@ public class CurrencyConverterGUI extends Application {
             } else {
                 showAlert("Invalid Currency Codes", "Selected currency codes or conversion rates not found.");
             }
+
+             // Set the combo boxes back to editable
+            sourceCurrencyComboBox.setEditable(true);
+            targetCurrencyComboBox.setEditable(true);
+        });
+
+        
+
+        Button clearButton = new Button("Clear");
+        clearButton.setOnAction(event -> {
+            sourceCurrencyComboBox.setValue(null);
+            targetCurrencyComboBox.setValue(null);
+            amountTextField.setText("");
+            resultLabel.setText("");
         });
 
         VBox vbox = new VBox(10);
         vbox.getChildren().addAll(
-                new Label("Source Currency:"),
-                sourceCurrencyComboBox,
-                new Label("Target Currency:"),
-                targetCurrencyComboBox,
-                new Label("Amount:"),
-                amountTextField,
-                convertButton,
-                resultLabel
+            new Label("Source Currency:"),
+            sourceCurrencyComboBox,
+            new Label("Target Currency:"),
+            targetCurrencyComboBox,
+            new Label("Amount:"),
+            amountTextField,
+            new Label("Date:"),
+            datePicker,
+            convertButton,
+            clearButton,
+            resultLabel
         );
+
         borderPane.setCenter(vbox);
 
-        Scene scene = new Scene(borderPane, 400, 250);
+        Scene scene = new Scene(borderPane, 500, 300);
         primaryStage.setScene(scene);
         primaryStage.show();
     }
 
-    // Specific exceptions, such as FileNotFoundException and IOException, are caught to provide more informative error messages to the user
-    //The showAlert method is enhanced to provide user-friendly error messages
-    private void readExchangeRateData(String jsonFilePath) throws IOException {
-        try (FileReader reader = new FileReader(jsonFilePath)) {
+    private void loadInitialRatesData() {
+        // Load the initial JSON data when the application starts
+        try (FileReader reader = new FileReader("currency_rates.json")) {
             JsonElement jsonElement = JsonParser.parseReader(reader);
             JsonObject jsonObject = jsonElement.getAsJsonObject();
 
             if (jsonObject.has("rates")) {
                 ratesObject = jsonObject.getAsJsonObject("rates");
             } else {
-                throw new IOException("'rates' field not found in JSON.");
+                showAlert("Invalid JSON format", "'rates' field not found in JSON.");
             }
+        } catch (IOException e) {
+            showAlert("Error", "Failed to read currency rates file: " + e.getMessage());
+        } catch (Exception e) {
+            showAlert("Error", "An unexpected error occurred: " + e.getMessage());
+        }
+    }
+
+    private void updateRatesFromJSON(String newDate) {
+        // Code to update rates from the JSON file based on the new date
+        // You may need to modify this based on your JSON file structure.
+        // This is a simplified example.
+        try (FileReader reader = new FileReader("currency_rates.json")) {
+            JsonElement jsonElement = JsonParser.parseReader(reader);
+            JsonObject jsonObject = jsonElement.getAsJsonObject();
+
+            if (jsonObject.has("rates")) {
+                ratesObject = jsonObject.getAsJsonObject("rates");
+            } else {
+                showAlert("Invalid JSON format", "'rates' field not found in JSON.");
+            }
+        } catch (IOException e) {
+            showAlert("Error", "Failed to read currency rates file: " + e.getMessage());
+        } catch (Exception e) {
+            showAlert("Error", "An unexpected error occurred: " + e.getMessage());
         }
     }
 
@@ -167,16 +189,15 @@ public class CurrencyConverterGUI extends Application {
         alert.showAndWait();
     }
 
-    private static void runPythonScript() {
+    private void runPythonScript(String selectedDate) {
         try {
-            // Specify the command to run the Python script
-            String pythonScript = "python";  // Modify this if your Python interpreter has a different name
-            String scriptPath = "fetch_currency_rates.py";  // Provide the correct path
+            String pythonScript = "python";
+            String scriptPath = "fetch_currency_rates.py";
 
-            ProcessBuilder processBuilder = new ProcessBuilder(pythonScript, scriptPath);
+            ProcessBuilder processBuilder = new ProcessBuilder(pythonScript, scriptPath, selectedDate);
+
             Process process = processBuilder.start();
 
-            // Wait for the Python script to complete
             int exitCode = process.waitFor();
             if (exitCode == 0) {
                 System.out.println("Python script executed successfully.");
@@ -186,5 +207,56 @@ public class CurrencyConverterGUI extends Application {
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
+    }
+
+    private class CustomComboBox extends ComboBox<String> {
+        private final TextField editor;
+        private ObservableList<String> originalItems;
+        private ObservableList<String> filteredItems;
+
+        public CustomComboBox() {
+            setEditable(true);
+            editor = getEditor();
+
+            editor.textProperty().addListener((observable, oldValue, newValue) -> {
+                if (originalItems == null) {
+                    originalItems = FXCollections.observableArrayList(getItems());
+                }
+
+                if (newValue.isEmpty()) {
+                    filteredItems = originalItems;
+                } else {
+                    filteredItems = originalItems.filtered(item ->
+                        item.toLowerCase().contains(newValue.toLowerCase()));
+                }
+                setItems(filteredItems);
+
+                if (!filteredItems.isEmpty()) {
+                    show();
+                } else {
+                    hide();
+                }
+            });
+
+            setOnHidden(e -> {
+                setItems(originalItems);
+                filteredItems = null;
+            });
+
+            setOnAction(e -> {
+                String selected = getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    editor.setText(selected); // Set the text when a selection is made
+                } else {
+                    editor.setText(""); // Clear the text when no selection is made
+                }
+                hide();
+            });
+        }
+
+        // Add this method to toggle editability
+        public void setComboBoxEditable(boolean isEditable) {
+        editor.setEditable(isEditable);
+    }
     }
 }
